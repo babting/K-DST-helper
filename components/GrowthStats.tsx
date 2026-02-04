@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChildProfile, GrowthRecord } from '../types';
 import { GROWTH_STANDARDS } from '../constants';
 import { analyzeGrowth } from '../services/geminiService';
@@ -14,8 +14,9 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { Ruler, Weight, CircleDashed, Plus, Calendar, TrendingUp, AlertCircle, CheckCircle2, X, Sparkles, RefreshCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Ruler, Weight, CircleDashed, Plus, Calendar, Sparkles, RefreshCcw, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { DatePickerPopup } from './ProfileSetup';
 
 interface Props {
   profile: ChildProfile;
@@ -36,8 +37,6 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
   const latestRecord = profile.growthHistory.length > 0 
     ? profile.growthHistory[profile.growthHistory.length - 1] 
     : null;
-
-  const currentAgeMonths = calculateMonthsBetween(profile.birthDate, new Date().toISOString());
 
   // --- AI Insight Effect ---
   useEffect(() => {
@@ -61,44 +60,114 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
 
   // --- CHART DATA PREPARATION ---
   
-  const minDomain = 0; 
-  const maxDomain = Math.ceil(Math.max(currentAgeMonths + 1, 6)); 
+  // Helper to interpolate standard value for any given month
+  const getInterpolatedStandard = (month: number) => {
+      const standards = GROWTH_STANDARDS[profile.gender];
+      
+      // Find range
+      const lower = standards.filter(s => s.month <= month).pop();
+      const upper = standards.find(s => s.month >= month);
 
-  const standardDataRaw = GROWTH_STANDARDS[profile.gender];
-  
-  const standardData = standardDataRaw
+      if (!lower) return upper ? (activeMetric === 'height' ? upper.h : activeMetric === 'weight' ? upper.w : upper.hc) : 0;
+      if (!upper) return activeMetric === 'height' ? lower.h : activeMetric === 'weight' ? lower.w : lower.hc;
+      if (lower.month === upper.month) return activeMetric === 'height' ? lower.h : activeMetric === 'weight' ? lower.w : lower.hc;
+
+      // Linear Interpolation
+      const range = upper.month - lower.month;
+      const progress = (month - lower.month) / range;
+      
+      const valLower = activeMetric === 'height' ? lower.h : activeMetric === 'weight' ? lower.w : lower.hc;
+      const valUpper = activeMetric === 'height' ? upper.h : activeMetric === 'weight' ? upper.w : upper.hc;
+      
+      return valLower + (valUpper - valLower) * progress;
+  };
+
+  const chartData = useMemo(() => {
+      // 1. Convert User Data
+      const userPoints = profile.growthHistory
+        .map(record => {
+            const m = calculateMonthsBetween(profile.birthDate, record.date);
+            return {
+                month: m,
+                value: activeMetric === 'height' ? record.height : activeMetric === 'weight' ? record.weight : record.headCircumference,
+                // Add standard value at this exact point for tooltip
+                standard: parseFloat(getInterpolatedStandard(m).toFixed(1)),
+                isUser: true
+            };
+        })
+        .filter(d => d.value !== undefined && d.value > 0);
+
+      // Determine Domain from user data
+      let minM = 0;
+      let maxM = 12;
+      
+      if (userPoints.length > 0) {
+          const months = userPoints.map(d => d.month);
+          const rawMin = Math.min(...months);
+          const rawMax = Math.max(...months);
+          const diff = rawMax - rawMin;
+
+          // Domain Logic
+          if (diff === 0) {
+            // Single point
+             if (rawMin < 1) {
+                  minM = 0;
+                  maxM = 1.2;
+             } else {
+                  minM = Math.max(0, rawMin - 1);
+                  maxM = rawMin + 1;
+             }
+          } else if (diff < 2) {
+             // Short range
+             minM = Math.max(0, rawMin - 0.2);
+             maxM = rawMax + 0.2;
+          } else {
+             // Normal range
+             const padding = diff * 0.1;
+             minM = Math.max(0, Math.floor(rawMin - padding));
+             maxM = Math.ceil(rawMax + padding);
+          }
+      }
+
+      // 2. Add Standard Curve Points (integer months within view)
+      const standardPoints = GROWTH_STANDARDS[profile.gender]
+        .filter(d => d.month >= Math.max(0, minM - 1) && d.month <= maxM + 1)
+        .map(d => ({
+            month: d.month,
+            standard: activeMetric === 'height' ? d.h : activeMetric === 'weight' ? d.w : d.hc,
+            value: null, // No user data at this point
+            isUser: false
+        }));
+
+      // 3. Merge and Sort
+      // We combine them so Recharts can plot lines correctly on the same axis
+      // User points have both 'value' and 'standard'. Standard points only have 'standard'.
+      const combined = [...userPoints, ...standardPoints]
+        .sort((a, b) => a.month - b.month);
+
+      return { data: combined, minDomain: minM, maxDomain: maxM };
+  }, [profile, activeMetric]);
+
+  const { data, minDomain, maxDomain } = chartData;
+
+  // Calculate Y-Axis Domain
+  const allValues = data
     .filter(d => d.month >= minDomain && d.month <= maxDomain)
-    .map(d => ({
-        month: d.month,
-        standard: activeMetric === 'height' ? d.h : activeMetric === 'weight' ? d.w : d.hc,
-    }));
-
-  const userData = profile.growthHistory
-    .map(record => ({
-        month: calculateMonthsBetween(profile.birthDate, record.date),
-        value: activeMetric === 'height' ? record.height : activeMetric === 'weight' ? record.weight : record.headCircumference,
-        date: record.date,
-    }))
-    .filter(d => d.value !== undefined)
-    .sort((a, b) => a.month - b.month);
+    .flatMap(d => [d.standard, d.value].filter(v => v !== null && v !== undefined) as number[]);
   
-  const allValues = [
-      ...standardData.map(d => d.standard),
-      ...userData.filter(d => d.month >= minDomain && d.month <= maxDomain).map(d => d.value as number)
-  ];
-  
-  const minVal = Math.min(...allValues);
-  const maxVal = Math.max(...allValues);
-  const range = maxVal - minVal || 10;
-  const padding = range * 0.2; 
+  const minVal = allValues.length ? Math.min(...allValues) : 0;
+  const maxVal = allValues.length ? Math.max(...allValues) : 100;
+  const yRange = maxVal - minVal || 5; 
+  const yPadding = yRange * 0.2; 
   
   const yDomain = [
-      Math.max(0, Math.floor(minVal - padding)), 
-      Math.ceil(maxVal + padding)
+      Math.max(0, Math.floor(minVal - yPadding)), 
+      Math.ceil(maxVal + yPadding)
   ];
 
   const metricLabel = activeMetric === 'height' ? '키' : activeMetric === 'weight' ? '몸무게' : '머리둘레';
   const unit = activeMetric === 'height' ? 'cm' : activeMetric === 'weight' ? 'kg' : 'cm';
+  const isMicroView = (maxDomain - minDomain) <= 3;
 
   const getLatestValue = (type: MetricType) => {
     const relevantRecords = profile.growthHistory.filter(r => 
@@ -130,7 +199,7 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
   const currentStyles = getStatusStyles(aiInsight?.status);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden pb-16">
+    <div className="flex flex-col h-full overflow-y-auto pb-20">
       
       {/* 1. Header with Add Button */}
       <div className="flex justify-between items-center px-1 mb-4 pt-2 shrink-0">
@@ -148,7 +217,7 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
       </div>
 
       {/* 2. Compact Segmented Control for Metrics */}
-      <div className="flex bg-slate-100 p-1 rounded-xl mb-4 mx-1 shrink-0">
+      <div className="flex bg-slate-100 p-1 rounded-xl mb-6 mx-1 shrink-0">
         {[
             { id: 'height', label: '키', unit: 'cm', icon: Ruler },
             { id: 'weight', label: '체중', unit: 'kg', icon: Weight },
@@ -173,20 +242,20 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
         ))}
       </div>
 
-      {/* 3. Compact Chart Section */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mx-1 flex-1 min-h-[200px] flex flex-col">
-          <div className="flex justify-between items-center mb-2">
+      {/* 3. Chart Section with Fixed Height */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mx-1 mb-4">
+          <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                {metricLabel} 추이
+                {metricLabel} 성장 곡선
             </h3>
             <div className="text-[10px] text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md">
-                전체 기간
+                {minDomain.toFixed(1)}~{maxDomain.toFixed(1)}개월 구간
             </div>
           </div>
           
-          <div className="flex-1 w-full min-h-0">
+          <div className="w-full h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
                     dataKey="month" 
@@ -194,26 +263,29 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
                     domain={[minDomain, maxDomain]}
                     allowDataOverflow={true}
                     tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                    tickFormatter={(val) => `${val}M`}
-                    tickCount={6}
+                    tickFormatter={(val) => isMicroView ? `${val.toFixed(1)}M` : `${Math.round(val)}M`}
+                    tickCount={isMicroView ? 5 : 7}
+                    interval="preserveStartEnd"
                 />
                 <YAxis 
                     domain={yDomain} 
                     tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                    width={35} 
+                    width={30} 
                     allowDataOverflow={false}
                 />
                 <Tooltip 
-                    labelFormatter={(v) => `${v}개월`}
-                    formatter={(value: number, name: string) => [
-                        `${value}${unit}`, 
-                        name === 'standard' ? '평균' : name === 'value' ? '내 아이' : name
-                    ]}
+                    labelFormatter={(v) => `${Number(v).toFixed(1)}개월`}
+                    formatter={(value: number, name: string) => {
+                        if (name === 'standard') return [`${value}${unit}`, '평균'];
+                        if (name === 'value') return [`${value}${unit}`, '내 아이'];
+                        return [value, name];
+                    }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', padding: '4px 8px', fontSize: '11px' }}
                 />
-                <Legend wrapperStyle={{ paddingTop: '5px', fontSize: '10px' }} iconSize={8} iconType="circle" />
+                <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px' }} iconSize={8} iconType="circle" />
+                
+                {/* Standard Line */}
                 <Line 
-                    data={standardData}
                     dataKey="standard" 
                     name="평균" 
                     stroke="#cbd5e1" 
@@ -222,15 +294,17 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
                     type="monotone"
                     strokeDasharray="4 4"
                     isAnimationActive={false}
+                    connectNulls
                 />
+                
+                {/* User Data Line */}
                 <Line 
-                    data={userData}
                     dataKey="value" 
                     name="내 아이" 
                     stroke="#4f46e5" 
                     strokeWidth={3} 
-                    dot={{ r: 3, strokeWidth: 2, fill: '#fff', stroke: '#4f46e5' }}
-                    activeDot={{ r: 5 }}
+                    dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#4f46e5' }}
+                    activeDot={{ r: 6 }}
                     type="monotone"
                     connectNulls
                 />
@@ -240,7 +314,7 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
       </div>
 
       {/* 4. AI Insight Card */}
-      <div className={`mt-3 mx-1 shrink-0 bg-gradient-to-br ${currentStyles.box} p-4 rounded-2xl border transition-colors relative overflow-hidden min-h-[120px]`}>
+      <div className={`mx-1 shrink-0 bg-gradient-to-br ${currentStyles.box} p-4 rounded-2xl border transition-colors relative overflow-hidden min-h-[100px]`}>
           <div className="flex items-center gap-2 mb-2">
               <div className={`p-1.5 rounded-lg shadow-sm ${currentStyles.icon}`}>
                   <Sparkles className={`w-4 h-4 ${currentStyles.iconText}`} />
@@ -422,175 +496,6 @@ const AddGrowthRecordModal: React.FC<AddModalProps> = ({ onClose, onSubmit, late
                         }}
                     />
                 )}
-            </div>
-        </div>
-    );
-};
-
-// --- Custom Date Picker Component (Duplicated for simplicity in this context) ---
-interface DatePickerProps {
-    initialDate: string; // YYYY-MM-DD
-    onClose: () => void;
-    onSelect: (date: string) => void;
-}
-
-const DatePickerPopup: React.FC<DatePickerProps> = ({ initialDate, onClose, onSelect }) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize today to midnight for comparison
-
-    const d = initialDate ? new Date(initialDate) : new Date();
-    const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-    
-    // Validate date
-    const startYear = isNaN(d.getFullYear()) ? today.getFullYear() : d.getFullYear();
-    const startMonth = isNaN(d.getMonth()) ? today.getMonth() : d.getMonth();
-
-    const [currentYear, setCurrentYear] = useState(startYear);
-    const [currentMonth, setCurrentMonth] = useState(startMonth);
-    const [selectedDate, setSelectedDate] = useState<string>(initialDate);
-
-    // Generate years for dropdown
-    const years = Array.from({ length: 8 }, (_, i) => today.getFullYear() - 7 + i).reverse();
-    const months = Array.from({ length: 12 }, (_, i) => i + 1);
-
-    const getDaysInMonth = (year: number, month: number) => {
-        return new Date(year, month + 1, 0).getDate();
-    };
-
-    const getFirstDayOfMonth = (year: number, month: number) => {
-        return new Date(year, month, 1).getDay();
-    };
-
-    const handlePrevMonth = () => {
-        if (currentMonth === 0) {
-            setCurrentMonth(11);
-            setCurrentYear(prev => prev - 1);
-        } else {
-            setCurrentMonth(prev => prev - 1);
-        }
-    };
-
-    const handleNextMonth = () => {
-        if (currentMonth === 11) {
-            setCurrentMonth(0);
-            setCurrentYear(prev => prev + 1);
-        } else {
-            setCurrentMonth(prev => prev + 1);
-        }
-    };
-
-    const handleDateClick = (day: number) => {
-        const mon = String(currentMonth + 1).padStart(2, '0');
-        const dd = String(day).padStart(2, '0');
-        const dateStr = `${currentYear}-${mon}-${dd}`;
-        setSelectedDate(dateStr);
-    };
-
-    const handleConfirm = () => {
-        if (selectedDate) {
-            onSelect(selectedDate);
-        } else {
-             if(!selectedDate && initialDate) onSelect(initialDate);
-        }
-    };
-
-    const daysInCurrentMonth = getDaysInMonth(currentYear, currentMonth);
-    const firstDay = getFirstDayOfMonth(currentYear, currentMonth); 
-    const blanks = Array.from({ length: firstDay }, (_, i) => i);
-    const days = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
-
-    return (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in px-4 rounded-[32px]">
-            <div className="bg-white rounded-2xl w-full max-w-[300px] p-4 shadow-2xl animate-scale-up">
-                {/* Header */}
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-lg text-slate-900">날짜 선택</h3>
-                    <button onClick={onClose} className="p-1.5 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
-                        <X className="w-4 h-4 text-slate-500" />
-                    </button>
-                </div>
-
-                {/* Controls */}
-                <div className="mb-4">
-                    <div className="flex justify-between items-center mb-3 px-1">
-                        <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-full text-slate-500">
-                            <ChevronLeft className="w-5 h-5" />
-                        </button>
-                        <div className="flex gap-1 text-sm">
-                            <select 
-                                value={currentYear} 
-                                onChange={(e) => setCurrentYear(Number(e.target.value))}
-                                className="font-bold text-slate-800 bg-transparent cursor-pointer outline-none hover:text-indigo-600 text-center appearance-none"
-                            >
-                                {years.map(y => <option key={y} value={y}>{y}년</option>)}
-                            </select>
-                            <select 
-                                value={currentMonth} 
-                                onChange={(e) => setCurrentMonth(Number(e.target.value))}
-                                className="font-bold text-slate-800 bg-transparent cursor-pointer outline-none hover:text-indigo-600 text-center appearance-none"
-                            >
-                                {months.map(m => <option key={m} value={m - 1}>{m}월</option>)}
-                            </select>
-                        </div>
-                        <button onClick={handleNextMonth} className="p-1 hover:bg-slate-100 rounded-full text-slate-500">
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
-                    </div>
-
-                    {/* Weekdays */}
-                    <div className="grid grid-cols-7 mb-1 text-center">
-                        {WEEKDAYS.map((day, idx) => (
-                            <div key={day} className={`text-[10px] font-medium ${idx === 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                                {day}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Calendar Grid */}
-                    <div className="grid grid-cols-7 gap-y-1 mb-2">
-                        {blanks.map(b => (
-                            <div key={`blank-${b}`} className="h-8"></div>
-                        ))}
-                        {days.map(day => {
-                            const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                            const isSelected = selectedDate === dateStr;
-                            
-                            const checkDate = new Date(currentYear, currentMonth, day);
-                            const isFuture = checkDate > today;
-                            const isToday = checkDate.getTime() === today.getTime();
-
-                            return (
-                                <button
-                                    key={day}
-                                    type="button"
-                                    disabled={isFuture}
-                                    onClick={() => !isFuture && handleDateClick(day)}
-                                    className={`
-                                        h-8 w-8 mx-auto rounded-full flex items-center justify-center text-xs transition-all
-                                        ${isFuture
-                                            ? 'text-slate-200 cursor-not-allowed'
-                                            : isSelected 
-                                                ? 'bg-indigo-600 text-white font-bold shadow-md transform scale-105' 
-                                                : isToday 
-                                                    ? 'bg-indigo-50 text-indigo-600 font-bold border border-indigo-100' 
-                                                    : 'text-slate-700 hover:bg-slate-100'
-                                        }
-                                    `}
-                                >
-                                    {day}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Footer Actions */}
-                <button 
-                    onClick={handleConfirm}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-indigo-200 text-sm"
-                >
-                    확인
-                </button>
             </div>
         </div>
     );

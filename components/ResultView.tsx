@@ -100,7 +100,7 @@ export const ResultView: React.FC<Props> = ({ result, stage, onRestart }) => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 mb-8">
+          <div className="flex flex-col gap-6 mb-8">
             {/* Chart Card */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 w-full flex items-center gap-2">

@@ -9,7 +9,7 @@ interface Props {
   allStages: ScreeningStage[];
   onStart: (stage: ScreeningStage) => void;
   onViewResult: (result: AssessmentResult) => void;
-  completedResult?: AssessmentResult | null;
+  allResults: Record<string, AssessmentResult>;
 }
 
 export const StageSelector: React.FC<Props> = ({ 
@@ -18,18 +18,12 @@ export const StageSelector: React.FC<Props> = ({
   allStages, 
   onStart, 
   onViewResult, 
-  completedResult 
+  allResults 
 }) => {
   
-  // 1. Determine Completed Stage
-  const completedStage = completedResult 
-    ? allStages.find(s => s.id === completedResult.stageId) 
-    : null;
-
-  // 2. Determine Nearest Stage (if no direct match)
+  // 1. Determine Nearest Stage (if no direct match)
   // We calculate the distance from the child's age to the stage's range
   const nearestStage = allStages.reduce((prev, curr) => {
-    // Distance to current stage range
     const getDistance = (stage: ScreeningStage) => {
         if (currentAgeMonths < stage.minMonths) return stage.minMonths - currentAgeMonths;
         if (currentAgeMonths > stage.maxMonths) return currentAgeMonths - stage.maxMonths;
@@ -38,23 +32,19 @@ export const StageSelector: React.FC<Props> = ({
     return getDistance(curr) < getDistance(prev) ? curr : prev;
   }, allStages[0]);
     
-  // 3. Set Primary Stage to Display
-  // Priority: Completed -> Matched -> Nearest
-  const primaryStage = completedStage || matchedStage || nearestStage;
-  
-  // Calculate next stage relative to the primary displayed stage
-  const primaryIndex = primaryStage ? allStages.findIndex(s => s.id === primaryStage.id) : -1;
-  
-  const nextStage = (primaryStage && primaryIndex < allStages.length - 1)
-    ? allStages[primaryIndex + 1]
-    : (!primaryStage && allStages.length > 0 ? allStages[0] : null);
+  // 2. Determine Primary Stage to Display
+  // Priority: Matched (Current Age) -> Nearest (Close Age)
+  const primaryStage = matchedStage || nearestStage;
 
-  // Status Flags
-  const isPrimaryCompleted = !!(completedResult && primaryStage && completedResult.stageId === primaryStage.id);
-  const isPrimaryMatched = matchedStage && primaryStage && matchedStage.id === primaryStage.id;
+  // 3. Check if Primary Stage is completed
+  const completedResult = allResults[primaryStage.id];
+  const isPrimaryCompleted = !!completedResult;
+  const isPrimaryMatched = matchedStage && primaryStage.id === matchedStage.id;
+  const isNearestMode = !isPrimaryMatched;
   
-  // If not completed and not matched, it means we are showing the nearest stage (Out of range)
-  const isNearestMode = !isPrimaryCompleted && !isPrimaryMatched;
+  // Calculate next stage for preview
+  const primaryIndex = allStages.findIndex(s => s.id === primaryStage.id);
+  const nextStage = (primaryIndex < allStages.length - 1) ? allStages[primaryIndex + 1] : null;
 
   if (!primaryStage) return null;
 
@@ -77,8 +67,8 @@ export const StageSelector: React.FC<Props> = ({
                   (isPrimaryMatched ? 'text-green-800' : 'text-amber-800')}`
             }>
                 {isPrimaryCompleted && <><CheckCircle2 className="w-5 h-5" /> 검사 완료 ({primaryStage.label})</>}
-                {isPrimaryMatched && <><CalendarCheck className="w-5 h-5" /> 추천 검사 시기: {primaryStage.label}</>}
-                {isNearestMode && <><Search className="w-5 h-5" /> 가장 가까운 검사: {primaryStage.label}</>}
+                {isPrimaryMatched && !isPrimaryCompleted && <><CalendarCheck className="w-5 h-5" /> 추천 검사 시기: {primaryStage.label}</>}
+                {isNearestMode && !isPrimaryCompleted && <><Search className="w-5 h-5" /> 가장 가까운 검사: {primaryStage.label}</>}
             </div>
 
             {/* Description */}
@@ -99,7 +89,7 @@ export const StageSelector: React.FC<Props> = ({
                 {isPrimaryCompleted ? (
                 <>
                     <button
-                        onClick={() => completedResult && onViewResult(completedResult)}
+                        onClick={() => onViewResult(completedResult)}
                         className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition-colors shadow-sm flex items-center justify-center gap-2"
                     >
                         <FileText className="w-4 h-4" /> 결과 보기
@@ -141,9 +131,6 @@ export const StageSelector: React.FC<Props> = ({
                   <ChevronRight className="w-4 h-4 text-slate-300" />
               </div>
           )}
-          
-          {/* List of other stages is completely hidden as per request, since we always show a primary card now */}
-
         </div>
       </div>
     </div>

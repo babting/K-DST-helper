@@ -83,7 +83,7 @@ export const ProfileSetup: React.FC<Props> = ({ onComplete, initialProfile }) =>
   return (
     <div className="h-full flex flex-col bg-white animate-fade-in relative">
       {/* Scrollable Form Area */}
-      <div className="flex-1 overflow-y-auto px-6 py-8 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto px-6 py-8 pb-28 scrollbar-hide">
         {/* Title */}
         <div className="mt-4 mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900 mb-3 leading-tight whitespace-pre-line">
@@ -218,7 +218,7 @@ export const ProfileSetup: React.FC<Props> = ({ onComplete, initialProfile }) =>
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="p-4 bg-white border-t border-slate-100 z-10 shrink-0">
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-white border-t border-slate-100 z-10">
         <button
           onClick={handleSubmit}
           disabled={!name || !birthDate || !height || !weight || !headCircumference}
@@ -244,13 +244,13 @@ export const ProfileSetup: React.FC<Props> = ({ onComplete, initialProfile }) =>
 };
 
 // --- Custom Date Picker Component ---
-interface DatePickerProps {
+export interface DatePickerProps {
     initialDate: string; // YYYY-MM-DD
     onClose: () => void;
     onSelect: (date: string) => void;
 }
 
-const DatePickerPopup: React.FC<DatePickerProps> = ({ initialDate, onClose, onSelect }) => {
+export const DatePickerPopup: React.FC<DatePickerProps> = ({ initialDate, onClose, onSelect }) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize today to midnight for comparison
 
