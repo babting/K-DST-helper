@@ -1,63 +1,50 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { AssessmentResult, ScreeningStage, ChildProfile } from "../types";
 import { GROWTH_STANDARDS } from "../constants";
 import { calculateMonthsBetween } from "../utils/date";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// --- Development Analysis Logic ---
+// --- Development Analysis Logic (Rule-based Replacement) ---
 
 export const analyzeDevelopment = async (
   result: AssessmentResult,
   stage: ScreeningStage
 ): Promise<string> => {
     
-    // Construct prompt context
-    const questions = stage.questions;
-    const answers = result.answers;
+    // Calculate basic stats
+    const totalQuestions = stage.questions.length;
+    const answeredQuestions = result.answers.length;
+    let totalScore = 0;
     
-    let promptContext = `Child Age: ${result.childAgeMonths} months.\n`;
-    promptContext += `Screening Stage: ${stage.label}\n`;
-    promptContext += `Questions and Answers (0: Not at all, 1: Sometimes, 2: Often, 3: Well):\n`;
+    result.answers.forEach(a => totalScore += a.score);
     
-    questions.forEach(q => {
-      const ans = answers.find(a => a.questionId === q.id);
-      const score = ans ? ans.score : 0;
-      promptContext += `- [${q.domain}] ${q.text}: Score ${score}\n`;
-    });
-  
-    const prompt = `Analyze the developmental screening results for this child.
-  Provide a comprehensive assessment report in Markdown format.
-  
-  Please follow this structure:
-  1. **🏆 종합 평가**: Give a summary of the child's development status based on the scores (e.g., Excellent, Good, or Needs Attention).
-  2. **💪 집중 케어 포인트**: Identify domains where the child scored low (< 2) and provide specific, actionable parenting tips.
-  3. **🌈 육아 팁**: General encouraging advice suitable for this age.
-  
-  Use friendly, supportive language suitable for parents. Korean language only.`;
-  
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [
-            { role: 'user', parts: [{ text: promptContext }] },
-            { role: 'user', parts: [{ text: prompt }] }
-        ],
-        config: {
-          systemInstruction: "You are a helpful child development expert assistant."
-        }
-      });
-      
-      return response.text || "분석 결과를 생성하지 못했습니다.";
-    } catch (error) {
-      console.error("Gemini API Error:", error);
-      return "죄송합니다. AI 분석을 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+    const maxPossibleScore = totalQuestions * 3;
+    const percentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
+
+    let summary = "";
+    if (percentage >= 85) {
+        summary = "전반적으로 발달 상태가 **매우 우수**합니다! 🎉 또래보다 빠른 발달을 보이고 있어요.";
+    } else if (percentage >= 70) {
+        summary = "발달 상태가 **양호**합니다. 🌱 또래 아이들과 비슷하게 잘 자라고 있어요.";
+    } else {
+        summary = "일부 영역에서 세심한 관찰이 필요할 수 있습니다. 🏥 점수가 낮은 영역은 놀이를 통해 자극을 주세요.";
     }
+
+    return `### 📊 ${stage.label} 발달 검사 결과
+    
+**종합 점수**: ${Math.round(percentage)}점
+
+${summary}
+
+**💡 육아 가이드**
+* 아이가 잘하는 행동에는 아낌없이 칭찬해주세요.
+* 점수가 낮은 항목은 평소 놀이 과정에서 자연스럽게 유도해보세요.
+* 구체적인 발달 상담은 전문의와 상의하는 것이 가장 정확합니다.
+
+_(이 리포트는 AI 연결 없이 생성된 기본 분석 결과입니다)_`;
 };
 
 
-// --- Growth Analysis Logic ---
+// --- Growth Analysis Logic (Rule-based Replacement) ---
 
 export const analyzeGrowth = async (
     profile: ChildProfile, 
@@ -89,6 +76,7 @@ export const analyzeGrowth = async (
     
     // Find Standard
     const standards = GROWTH_STANDARDS[profile.gender];
+    // Find closest month standard
     const standard = standards.reduce((prev, curr) => 
         Math.abs(curr.month - recordAgeMonths) < Math.abs(prev.month - recordAgeMonths) ? curr : prev
     );
@@ -97,68 +85,40 @@ export const analyzeGrowth = async (
     const percentDiff = ((val - stdVal) / stdVal) * 100;
     
     const metricName = metric === 'height' ? '키' : metric === 'weight' ? '몸무게' : '머리둘레';
-    const unit = metric === 'height' ? 'cm' : metric === 'weight' ? 'kg' : 'cm';
-
-    const prompt = `
-    Analyze this child growth data:
-    - Age: ${recordAgeMonths} months
-    - Gender: ${profile.gender}
-    - Metric: ${metricName}
-    - Value: ${val} ${unit}
-    - Standard (50th percentile): ${stdVal} ${unit}
-    - Difference: ${percentDiff.toFixed(1)}%
     
-    Provide a short, 1-2 sentence friendly insight in Korean.
-    Return JSON:
-    {
-       "title": "Short catchy title with emoji (e.g. 키가 쑥쑥 컸어요! 🦒)",
-       "content": "Friendly explanation comparing to average.",
-       "status": "positive" | "caution" | "warning"
+    // Rule-based logic
+    let title = "";
+    let content = "";
+    let status: 'positive' | 'caution' | 'warning' = 'positive';
+
+    if (Math.abs(percentDiff) <= 5) {
+        title = `평균과 아주 비슷해요! ⚖️`;
+        content = `또래 아이들의 평균 ${metricName}와 거의 같습니다. 아주 건강하게 잘 자라고 있어요.`;
+        status = 'positive';
+    } else if (percentDiff > 5 && percentDiff <= 15) {
+        title = `또래보다 큰 편이에요! 🦒`;
+        content = `평균보다 약 ${percentDiff.toFixed(1)}% 더 큽니다. 튼튼하게 자라고 있네요!`;
+        status = 'positive';
+    } else if (percentDiff > 15) {
+        title = `성장이 아주 빨라요! 🚀`;
+        content = `또래 상위권에 속하는 ${metricName}입니다. 영양 섭취가 충분해 보여요.`;
+        status = 'positive'; // Being tall/heavy isn't necessarily a warning unless extreme, but keeping positive for general UX
+    } else if (percentDiff < -5 && percentDiff >= -15) {
+        title = `평균보다 조금 작아요 🐣`;
+        content = `평균보다 약 ${Math.abs(percentDiff).toFixed(1)}% 작지만, 꾸준히 자라고 있다면 걱정하지 마세요.`;
+        status = 'caution';
+    } else {
+        title = `세심한 관찰이 필요해요 🩺`;
+        content = `또래 평균보다 차이가 다소 있습니다. (${Math.abs(percentDiff).toFixed(1)}% 차이) 꾸준한 기록과 전문가 상담을 권장합니다.`;
+        status = 'warning';
     }
-    Rules for status:
-    - "positive": Within reasonable range (e.g. +/- 10% for weight, +/- 5% for height).
-    - "caution": Slightly outside average.
-    - "warning": Significantly outside.
-    `;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        content: { type: Type.STRING },
-                        status: { type: Type.STRING, description: "positive, caution, or warning" }
-                    },
-                    required: ["title", "content", "status"]
-                },
-            },
-        });
+    // Simulate async delay slightly for UX consistency
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-        const text = response.text;
-        if (!text) throw new Error("No response");
-        const json = JSON.parse(text);
-        
-        // Validate status
-        const validStatus = ['positive', 'caution', 'warning'].includes(json.status) ? json.status : 'positive';
-        
-        return {
-            title: json.title,
-            content: json.content,
-            status: validStatus
-        };
-
-    } catch (error) {
-        console.error("Gemini Growth Analysis Error:", error);
-        // Fallback
-        return {
-            title: "분석 중...",
-            content: "AI 분석 연결 상태가 좋지 않습니다. 잠시 후 다시 시도해주세요.",
-            status: "positive"
-        };
-    }
+    return {
+        title,
+        content,
+        status
+    };
 };
