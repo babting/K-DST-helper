@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, PropsWithChildren, useEffect } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation, Navigate, useParams } from 'react-router-dom';
 import { ChildProfile, ScreeningStage, AssessmentResult, AssessmentAnswer, GrowthRecord } from './types';
 import { SCREENING_STAGES } from './constants';
@@ -13,7 +13,7 @@ import { Stethoscope, ChevronRight, Home, LineChart, ClipboardList } from 'lucid
 
 // --- WRAPPER COMPONENTS FOR ROUTING ---
 
-const ProtectedRoute = ({ children, profile }: { children: React.ReactNode, profile: ChildProfile | null }) => {
+const ProtectedRoute = ({ children, profile }: PropsWithChildren<{ profile: ChildProfile | null }>) => {
   if (!profile) {
     return <Navigate to="/setup" replace />;
   }
@@ -75,24 +75,38 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Data State with Persistence
+  // Data State with Persistence (Restored)
   const [profile, setProfile] = useState<ChildProfile | null>(() => {
     try {
       const saved = localStorage.getItem('childProfile');
       return saved ? JSON.parse(saved) : null;
     } catch (e) {
+      console.error("Failed to load profile", e);
       return null;
     }
   });
 
-  // Store results by stageId to allow persistence across navigation
-  const [assessmentResults, setAssessmentResults] = useState<Record<string, AssessmentResult>>({});
+  // Store results with Persistence
+  const [assessmentResults, setAssessmentResults] = useState<Record<string, AssessmentResult>>(() => {
+    try {
+      const saved = localStorage.getItem('assessmentResults');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
+  // Save to localStorage whenever profile changes
   useEffect(() => {
     if (profile) {
       localStorage.setItem('childProfile', JSON.stringify(profile));
     }
   }, [profile]);
+
+  // Save to localStorage whenever results change
+  useEffect(() => {
+    localStorage.setItem('assessmentResults', JSON.stringify(assessmentResults));
+  }, [assessmentResults]);
 
   // --- HANDLERS ---
 
@@ -144,8 +158,10 @@ function AppContent() {
     s => ageInMonths >= s.minMonths && ageInMonths <= s.maxMonths
   );
 
-  // Check if we should show the bottom tab bar
-  const showTabBar = ['/', '/growth'].includes(location.pathname);
+  // Check if we should show the bottom tab bar (Home or any Growth sub-route)
+  const isHome = location.pathname === '/';
+  const isGrowth = location.pathname.startsWith('/growth');
+  const showTabBar = isHome || isGrowth;
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 relative shadow-2xl flex flex-col">
@@ -240,8 +256,21 @@ function AppContent() {
                     </ProtectedRoute>
                 } />
 
-                {/* Growth Tab */}
-                <Route path="/growth" element={
+                {/* Growth Tab Routes */}
+                {/* Redirect /growth to /growth/height */}
+                <Route path="/growth" element={<Navigate to="/growth/height" replace />} />
+                
+                {/* Main Growth Route with :metric parameter */}
+                <Route path="/growth/:metric" element={
+                    <ProtectedRoute profile={profile}>
+                        <div className="p-4 h-full flex flex-col animate-fade-in">
+                            {profile && <GrowthStats profile={profile} onAddRecord={handleAddGrowthRecord} />}
+                        </div>
+                    </ProtectedRoute>
+                } />
+                
+                {/* Growth Route with :metric and :action (e.g. /growth/height/add) */}
+                <Route path="/growth/:metric/:action" element={
                     <ProtectedRoute profile={profile}>
                         <div className="p-4 h-full flex flex-col animate-fade-in">
                             {profile && <GrowthStats profile={profile} onAddRecord={handleAddGrowthRecord} />}
@@ -271,17 +300,17 @@ function AppContent() {
             <div className="bg-white border-t border-slate-100 px-6 py-3 pb-safe shrink-0 flex justify-between items-center z-20 sticky bottom-0">
                 <button 
                     onClick={() => navigate('/')}
-                    className={`flex-1 flex flex-col items-center gap-1 transition-colors ${location.pathname === '/' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`flex-1 flex flex-col items-center gap-1 transition-colors ${isHome ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                    <Home className={`w-6 h-6 ${location.pathname === '/' ? 'fill-current' : ''}`} />
+                    <Home className={`w-6 h-6 ${isHome ? 'fill-current' : ''}`} />
                     <span className="text-[10px] font-bold">홈</span>
                 </button>
 
                 <button 
-                    onClick={() => navigate('/growth')}
-                    className={`flex-1 flex flex-col items-center gap-1 transition-colors ${location.pathname === '/growth' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                    onClick={() => navigate('/growth/height')}
+                    className={`flex-1 flex flex-col items-center gap-1 transition-colors ${isGrowth ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                    <LineChart className={`w-6 h-6 ${location.pathname === '/growth' ? 'stroke-[2.5px]' : ''}`} />
+                    <LineChart className={`w-6 h-6 ${isGrowth ? 'stroke-[2.5px]' : ''}`} />
                     <span className="text-[10px] font-bold">성장관리</span>
                 </button>
             </div>

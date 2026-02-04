@@ -1,9 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아이건강해 - 영유아 발달 체크</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👶</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -20,35 +22,6 @@
           scrollbar-width: none;  /* Firefox */
       }
     </style>
-    <!-- Maze Snippet -->
-    <script>
-    (function (m, a, z, e) {
-      var s, t, u, v;
-      try {
-        t = m.sessionStorage.getItem('maze-us');
-      } catch (err) {}
-
-      if (!t) {
-        t = new Date().getTime();
-        try {
-          m.sessionStorage.setItem('maze-us', t);
-        } catch (err) {}
-      }
-
-      u = document.currentScript || (function () {
-        var w = document.getElementsByTagName('script');
-        return w[w.length - 1];
-      })();
-      v = u && u.nonce;
-
-      s = a.createElement('script');
-      s.src = z + '?apiKey=' + e;
-      s.async = true;
-      if (v) s.setAttribute('nonce', v);
-      a.getElementsByTagName('head')[0].appendChild(s);
-      m.mazeUniversalSnippetApiKey = e;
-    })(window, document, 'https://snippet.maze.co/maze-universal-loader.js', 'a862b29d-f81a-471a-acee-4fd1635d53a1');
-    </script>
   <script type="importmap">
 {
   "imports": {
@@ -62,7 +35,8 @@
     "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
     "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
-    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3"
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
   }
 }
 </script>

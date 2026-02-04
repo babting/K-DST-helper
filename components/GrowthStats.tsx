@@ -14,9 +14,10 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { Ruler, Weight, CircleDashed, Plus, Calendar, Sparkles, RefreshCcw, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Ruler, Weight, CircleDashed, Plus, Calendar, Sparkles, RefreshCcw, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { DatePickerPopup } from './ProfileSetup';
+import { useParams, useNavigate } from 'react-router-dom';
 
 interface Props {
   profile: ChildProfile;
@@ -26,9 +27,24 @@ interface Props {
 type MetricType = 'height' | 'weight' | 'head';
 
 export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
-  const [activeMetric, setActiveMetric] = useState<MetricType>('height');
-  const [showAddModal, setShowAddModal] = useState(false);
-  
+  const { metric, action } = useParams<{ metric: string; action: string }>();
+  const navigate = useNavigate();
+
+  // Validate and determine active metric from URL
+  const validMetrics: MetricType[] = ['height', 'weight', 'head'];
+  const activeMetric: MetricType = (metric && validMetrics.includes(metric as MetricType)) 
+    ? (metric as MetricType) 
+    : 'height';
+
+  const showAddModal = action === 'add';
+
+  // If invalid metric in URL, redirect to default
+  useEffect(() => {
+    if (metric && !validMetrics.includes(metric as MetricType)) {
+        navigate('/growth/height', { replace: true });
+    }
+  }, [metric, navigate]);
+
   // State to hold the structured insight
   const [aiInsight, setAiInsight] = useState<{ title: string; content: string; status: 'positive' | 'caution' | 'warning' } | null>(null);
   const [loadingInsight, setLoadingInsight] = useState<boolean>(false);
@@ -208,7 +224,7 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
             <p className="text-slate-500 text-xs">AI 성장 분석 & 리포트</p>
           </div>
           <button 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => navigate(`/growth/${activeMetric}/add`)}
             className="flex items-center gap-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold shadow-md hover:bg-slate-800 transition-colors"
           >
             <Plus className="w-3 h-3" />
@@ -225,7 +241,7 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
         ].map((m) => (
             <button
                 key={m.id}
-                onClick={() => setActiveMetric(m.id as MetricType)}
+                onClick={() => navigate(`/growth/${m.id}`)}
                 className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg transition-all ${
                     activeMetric === m.id 
                     ? 'bg-white text-indigo-600 shadow-sm font-bold' 
@@ -340,10 +356,10 @@ export const GrowthStats: React.FC<Props> = ({ profile, onAddRecord }) => {
       {showAddModal && (
         <AddGrowthRecordModal 
             latestRecord={latestRecord}
-            onClose={() => setShowAddModal(false)} 
+            onClose={() => navigate(`/growth/${activeMetric}`)} 
             onSubmit={(record) => {
                 onAddRecord(record);
-                setShowAddModal(false);
+                navigate(`/growth/${activeMetric}`);
             }} 
         />
       )}
