@@ -1,0 +1,5 @@
+{
+  "name": "아이건강해 (K-DST Helper)",
+  "description": "영유아 발달선별검사(K-DST) 스타일의 체크리스트를 통해 아이의 발달 상태를 확인하고, Gemini AI를 통해 맞춤형 육아 가이드를 제공하는 애플리케이션입니다.",
+  "requestFramePermissions": []
+}
